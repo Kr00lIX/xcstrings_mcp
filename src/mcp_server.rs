@@ -502,7 +502,7 @@ impl XcStringsMcpServer {
     ) -> Result<CallToolResult, McpError> {
         let params = params.0;
         let store = self.store_for(Some(params.path.as_str())).await?;
-        store.reload().await.expect("reload store");
+        let _ = store.reload().await;
         let languages = store.list_languages().await;
         Ok(render_languages(languages))
     }
@@ -810,6 +810,32 @@ mod tests {
         assert!(languages.iter().any(|v| v.as_str() == Some("en")));
         assert!(languages.iter().any(|v| v.as_str() == Some("fr")));
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[tokio::test]
+    async fn list_languages_tool_handles_nonexistent_file() {
+        let path = PathBuf::from("/tmp/xcstrings_test_nonexistent_12345/Localizable.xcstrings");
+        let path_str = path.to_str().unwrap().to_string();
+        let manager = Arc::new(
+            XcStringsStoreManager::new(None)
+                .await
+                .expect("create manager"),
+        );
+        let server = XcStringsMcpServer::new(manager.clone());
+
+        let result = server
+            .list_languages(Parameters(ListLanguagesParams {
+                path: path_str.clone(),
+            }))
+            .await
+            .expect("tool success");
+        let payload = parse_json(&result);
+        let languages = payload
+            .get("languages")
+            .and_then(|v| v.as_array())
+            .expect("languages array");
+        // Should return the default source language (en)
+        assert!(languages.iter().any(|v| v.as_str() == Some("en")));
     }
 
     #[tokio::test]
